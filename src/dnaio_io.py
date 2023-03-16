@@ -1,4 +1,5 @@
 import dnaio
+import pathlib
 
 
 # Reading FQSTQ with dnaio
@@ -8,9 +9,11 @@ import dnaio
 def read_single(fastq):
     with dnaio.open(fastq) as reader:
         bp = 0
+        record_cnt= 0
         for record in reader:
             bp += len(record)
-    print(f"file read: {fastq}")
+            record_cnt+=1
+    print(f"file read: {fastq}, total records: {record_cnt}")
     print(f"The input file contains {bp/1E6:.1f} Mbp")
 
 
@@ -46,21 +49,50 @@ def combine(fastq_in1, fastq_in2):
     filename = "../output/combined.fastq.gz"
     with dnaio.open(fastq_in1, fastq_in2) as reader, \
             dnaio.open(filename, mode="w") as writer:
-        sequence = ''
-        qualities = ''
+        names = []
+        sequences = []
+        qualities_list = []
         for r1, r2 in reader:
             ##Some fake resolve logic
             #use first half of r1
-            sequence.join(r1[:int(len(r1)/2)].sequence)
-            qualities.join(r1[:int(len(r1)/2)].qualities)
+            names.append(r1[:int(len(r1)/2)].name)
+            sequences.append(r1[:int(len(r1)/2)].sequence)
+            qualities_list.append(r1[:int(len(r1)/2)].qualities)
             #use second half of r2
-            sequence.join(r2[-int(len(r2)/2):].sequence)
-            qualities.join(r2[:int(len(r2)/2)].qualities)
+            names.append(r1[-int(len(r2) / 2):].name)
+            sequences.append(r2[-int(len(r2)/2):].sequence)
+            qualities_list.append(r2[-int(len(r2)/2):].qualities)
             # print(f"processed sequence full length:  {len(sequence)}")
+
             #create dummy resolved single-end read
-        out = dnaio.SequenceRecord(name=r1.name.join("_comb"), sequence=sequence, qualities=qualities)
-        writer.write(out)
+        for name, sequence, qualities in zip(names,sequences,qualities_list):
+            out = dnaio.SequenceRecord(name=name, sequence=sequence, qualities=qualities)
+            writer.write(out)
         print(f"file saved: {filename}")
 
     ## checking the output FASTQs
     read_single("../output/combined.fastq.gz")
+
+def write_fastq(record, filename):
+    with dnaio.open(filename, mode="w") as writer:
+        writer.write(record)
+    print(f"file saved: {filename}")
+
+def write_fastqs(chunked_records, core_filename):
+    i = 0
+    filename= core_filename
+
+    with dnaio.open(filename, mode="w") as writer:
+        for chunk in chunked_records:
+            # i += 1
+            # list_fn = split(".", core_filename)
+            # filename = list_fn[0].join(f"_{i}").join(list_fn[1:])
+            # print("check fn: {filename}")
+            writer.write(chunk)
+    print(f"file saved: {filename}")
+
+def check_mates(records1, records2):
+    for records in zip(records1, records2):
+        if not dnaio.records_are_mates(*records):
+            raise dnaio.MateError(f"IDs do not match for {records}")
+    return True
