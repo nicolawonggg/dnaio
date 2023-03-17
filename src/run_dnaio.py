@@ -2,11 +2,13 @@ import random
 import dnaio_chunk
 import dnaio_io
 from multiprocessing import Pool
+import cProfile
+import pstats
 
 
 read1 = "../data/CEG9330132-19-01_S12_L001_R1_001.fastq.gz"
 read2 = "../data/CEG9330132-19-01_S12_L001_R2_001.fastq.gz"
-cpu_count = 4
+cpu_count = 6
 buffer_size =  4*1024**2 #maximum length for a chunk
 
 
@@ -21,6 +23,24 @@ def _resolve(read1, read2):
     else:
         res.append(read1)
     return dis_r1, dis_r2, res
+
+def save_chunks():
+    resolve_input = dnaio_chunk.chunk_pair(read1, read2, buffer_size)
+    discard_r1 = []
+    discard_r2 = []
+    resolved = []
+    # create a pool with the number of processing matching the available cpus
+    with Pool(cpu_count) as pool:
+        for dis_r1, dis_r2, res in pool.starmap(
+                _resolve, resolve_input
+        ):
+            discard_r1.extend(dis_r1)
+            discard_r2.extend(dis_r2)
+            resolved.extend(res)
+
+    print(f"discarded r1 :{len(discard_r1)},  r2 :{len(discard_r2)}")
+    print(f"resolved :{len(resolved)}")
+    return discard_r1, discard_r2, resolved
 
 if __name__ == '__main__':
 
@@ -37,21 +57,13 @@ if __name__ == '__main__':
     # dnaio_chunk.chunk_single(read1, 4)
 
 ## Testing chunk read pairs, then output discard pairs and resolved reads
-    resolve_input = dnaio_chunk.chunk_pair(read1, read2,buffer_size)
-    discard_r1 = []
-    discard_r2 = []
-    resolved = []
-    # create a pool with the number of processing matching the available cpus
-    with Pool(cpu_count) as pool:
-        for dis_r1, dis_r2, res in pool.starmap(
-            _resolve, resolve_input
-        ):
-            discard_r1.extend(dis_r1)
-            discard_r2.extend(dis_r2)
-            resolved.extend(res)
-
-    print(f"discarded r1 :{len(discard_r1)},  r2 :{len(discard_r2)}")
-    print(f"resolved :{len(resolved)}")
+    profiler = cProfile.Profile()
+    profiler.enable()
+    discard_r1, discard_r2, resolved = save_chunks()
+    profiler.disable()
+    stats=pstats.Stats(profiler).sort_stats(-1)
+    stats.print_stats()
+    stats.dump_stats('output.pstats')
 
     if dnaio_io.check_mates(discard_r1, discard_r2):
         print("passed check: discard files pair align with each other")
